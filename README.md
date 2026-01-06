@@ -1,12 +1,18 @@
 # applied-cryptography-experiment
-An academic cryptography experiment focused on encryption using keys generated from unconventional system entropy sources.
+## Why I built this
+An academic cryptography experiment focused on encryption using keys generated from unconventional system entropy sources. 
 
-## Requirements
+The goal of this project is to deepen my understanding of cryptographic ciphers and explore how entropy can be used to design efficient encryption schemes.
+
+
+## Recommended Environment
 
 - **Python 3.10**
 - Operating System: **Windows** 
 
-No external libraries are required. Only Python standard libraries are used.
+It's recommended because different environments may lead to unexpected results.
+
+No external libraries are required. Only Python standard libraries are used. 
 
 ## How To Run
 

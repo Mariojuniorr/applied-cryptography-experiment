@@ -28,7 +28,11 @@ def ENC(keys, M):
     for Ki in keys:
         newL = R
 
-        f = [((r & k) ^ ((r ^ k) & 1)) for r, k in zip(R, Ki)]
+        f = []
+        for i, (r, k) in enumerate(zip(R, Ki)):
+            left = R[i-1] if i > 0 else R[-1]
+            right = R[(i+1) % len(R)]
+            f.append((r ^ k ^ left ^ right) & 1)
 
         newR = [l ^ fi for l, fi in zip(L, f)]
         L, R = newL, newR
@@ -44,8 +48,11 @@ def DEC(keys, C):
 
     for Ki in reversed(keys):
         newR = L
-
-        f = [((l & k) ^ ((l ^ k) & 1)) for l, k in zip(L, Ki)]
+        f = []
+        for i, (r, k) in enumerate(zip(newR, Ki)):
+            left = newR[i-1] if i > 0 else newR[-1]
+            right = newR[(i+1) % len(newR)]
+            f.append((r ^ k ^ left ^ right) & 1)
 
         newL = [r ^ fi for r, fi in zip(R, f)]
         L, R = newL, newR
@@ -125,7 +132,7 @@ def run_tests(seed, M, rounds=16):
     M2 = DEC(keys, C)
     end = time.perf_counter()
 
-    print("Tempo ENC+DEC:", end - start, " s")
+    print("Tempo ENC+DEC:", end - start, "seconds")
 
     print("Correção:", M == M2)
 

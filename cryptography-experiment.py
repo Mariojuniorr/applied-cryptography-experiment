@@ -71,6 +71,74 @@ def exotic_entropy_fast():
 
     return mac ^ cursor_entropy ^ chaos_entropy ^ os.getpid()
 
+
+
+# **********************************************TESTES**********************************************
+
+def hamming(A, B):
+    return sum(a ^ b for a, b in zip(A, B))
+
+
+def test_correctness(keys, M):
+    C = ENC(keys, M)
+    M2 = DEC(keys, C)
+    return M == M2
+
+
+def test_avalanche_message(seed, M, rounds=16):
+    keys = GEN(seed, rounds, len(M))
+    C1 = ENC(keys, M)
+
+    # muda 1 bit da mensagem
+    M2 = M[:]
+    M2[0] ^= 1
+
+    C2 = ENC(keys, M2)
+    return hamming(C1, C2) / len(M)
+
+
+def test_avalanche_key(seed, M, rounds=16):
+    keys1 = GEN(seed, rounds, len(M))
+    C1 = ENC(keys1, M)
+
+    # muda 1 bit da seed
+    seed2 = seed ^ 1
+    keys2 = GEN(seed2, rounds, len(M))
+    C2 = ENC(keys2, M)
+
+    return hamming(C1, C2) / len(M)
+
+
+def test_balance(C):
+    ones = sum(C)
+    zeros = len(C) - ones
+    return ones / len(C), zeros / len(C)
+
+def run_tests(seed, M, rounds=16):
+
+    print("\n********TESTES*********")
+
+    keys = GEN(seed, rounds, len(M))
+
+    start = time.perf_counter()
+    C = ENC(keys, M)
+    M2 = DEC(keys, C)
+    end = time.perf_counter()
+
+    print("Tempo ENC+DEC:", end - start, " s")
+
+    print("Correção:", M == M2)
+
+    aval_m = test_avalanche_message(seed, M, rounds)
+    print("Difusão (Avalanche M):", aval_m)
+
+    aval_k = test_avalanche_key(seed, M, rounds)
+    print("Confusão (Avalanche K):", aval_k)
+
+    ones, zeros = test_balance(C)
+    print("Balanceamento bits (1,0):", ones, zeros)
+
+
 if __name__ == "__main__":
 
     N = 1000
@@ -96,6 +164,5 @@ if __name__ == "__main__":
     print("Mensagem original:", M)
     print("Cifrado:", C)
     print("Decifrado:", M_dec)
-    print("Correto?", M == M_dec)
-    print("Tempo ENC+DEC:", end - start, "segundos")
 
+    run_tests(seed,M)

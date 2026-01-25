@@ -5,38 +5,52 @@ import platform
 import ctypes
 import ctypes.wintypes
 
-def GEN(seed: int) -> list[int]:
-    seed_bits = bin(seed)[2:]
-    size = 4 * len(seed_bits)
-
-    K = []
+def GEN(seed: int, rounds=16, block_size=64):
     x = seed & 0xFFFFFFFF
+    keys = []
 
-    for _ in range(size):
-        x ^= (x << 13) & 0xFFFFFFFF
-        x ^= (x >> 17)
-        x ^= (x << 5) & 0xFFFFFFFF
-        K.append(x & 1)
+    for _ in range(rounds):
+        sub = []
+        for _ in range(block_size // 2):
+            x ^= (x << 13) & 0xFFFFFFFF
+            x ^= (x >> 17)
+            x ^= (x << 5) & 0xFFFFFFFF
+            sub.append(x & 1)
+        keys.append(sub)
 
-    return K
+    return keys
 
-def ENC(K: list[int], M: list[int]) -> list[int]:
-    assert len(K) == len(M)
+def ENC(keys, M):
+    n = len(M)
+    L = M[:n//2]
+    R = M[n//2:]
 
-    temp = [m ^ k for m, k in zip(M, K)]
+    for Ki in keys:
+        newL = R
 
-    shift = sum(K) % len(K)
-    return temp[shift:] + temp[:shift]
+        f = [((r & k) ^ ((r ^ k) & 1)) for r, k in zip(R, Ki)]
+
+        newR = [l ^ fi for l, fi in zip(L, f)]
+        L, R = newL, newR
+
+    return L + R
 
 
-def DEC(K: list[int], C: list[int]) -> list[int]:
-    assert len(K) == len(C)
 
-    shift = sum(K) % len(K)
+def DEC(keys, C):
+    n = len(C)
+    L = C[:n//2]
+    R = C[n//2:]
 
-    temp = C[-shift:] + C[:-shift] if shift != 0 else C[:]
+    for Ki in reversed(keys):
+        newR = L
 
-    return [t ^ k for t, k in zip(temp, K)]
+        f = [((l & k) ^ ((l ^ k) & 1)) for l, k in zip(L, Ki)]
+
+        newL = [r ^ fi for r, fi in zip(R, f)]
+        L, R = newL, newR
+
+    return L + R
 
 def exotic_entropy_fast():
     # MAC address
@@ -68,15 +82,20 @@ if __name__ == "__main__":
     print("Average entropy time:", (end - start) / N)
 
     seed = exotic_entropy_fast()
-    K = GEN(seed)
 
-    M = [i % 2 for i in range(len(K))]
+    M = [i % 2 for i in range(64)]
+
+    keys = GEN(seed, rounds=16, block_size=len(M))
 
     start = time.perf_counter()
-    C = ENC(K, M)
-    M_dec = DEC(K, C)
+    C = ENC(keys, M)
+    M_dec = DEC(keys, C)
     end = time.perf_counter()
 
     print("Seed:", seed)
-    print("Key size:", len(K))
-    print("Time dec and enc:", end - start, "seconds")
+    print("Mensagem original:", M)
+    print("Cifrado:", C)
+    print("Decifrado:", M_dec)
+    print("Correto?", M == M_dec)
+    print("Tempo ENC+DEC:", end - start, "segundos")
+

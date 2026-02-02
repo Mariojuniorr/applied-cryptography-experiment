@@ -4,6 +4,7 @@ import os
 import platform
 import ctypes
 import ctypes.wintypes
+import random
 
 def GEN(seed: int, rounds=16, block_size=64):
     x = seed & 0xFFFFFFFF
@@ -156,11 +157,14 @@ if __name__ == "__main__":
 
     print("Average entropy time:", (end - start) / N)
 
-    seed = exotic_entropy_fast()
+    seed = exotic_entropy_fast() & 0xFFFFFFFF
+    SEED_BITS = 32
+    MSG_SIZE = 4 * SEED_BITS  # 128 bits
+#    seed = exotic_entropy_fast()
 
-    M = [i % 2 for i in range(64)]
+    M = [random.randint(0, 1) for _ in range(MSG_SIZE)]
 
-    keys = GEN(seed, rounds=16, block_size=len(M))
+    keys = GEN(seed, rounds=16, block_size=MSG_SIZE)
 
     start = time.perf_counter()
     C = ENC(keys, M)

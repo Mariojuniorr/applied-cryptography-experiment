@@ -76,7 +76,7 @@ def seed():
 
 
 # ********************************************** Funções principais **********************************************
-def GEN(seed_bits, rounds=16, block_size=128):
+def GEN(seed_bits, rounds=4, block_size=128):
     x = seed_bits[:]  # copia
 
     keys = []
@@ -123,7 +123,7 @@ def hamming(A, B):
     return sum(a ^ b for a, b in zip(A, B))
 
 
-def test_avalanche_message(seed_bits, M, rounds=16):
+def test_avalanche_message(seed_bits, M, rounds=4):
     keys = GEN(seed_bits, rounds, len(M))
     C1 = ENC(keys, M)
 
@@ -134,7 +134,7 @@ def test_avalanche_message(seed_bits, M, rounds=16):
     return hamming(C1, C2) / len(M)
 
 
-def test_avalanche_key(seed_bits, M, rounds=16):
+def test_avalanche_key(seed_bits, M, rounds=4):
     keys1 = GEN(seed_bits, rounds, len(M))
     C1 = ENC(keys1, M)
 
@@ -153,7 +153,7 @@ def test_balance(C):
     return ones / len(C), zeros / len(C)
 
 
-def run_tests(seed_bits, M, rounds=16):
+def run_tests(seed_bits, M, rounds=4):
     print("\n********TESTES*********")
 
     keys = GEN(seed_bits, rounds, len(M))
@@ -179,7 +179,8 @@ if __name__ == "__main__":
     MSG_SIZE = 128
     M = [random.randint(0, 1) for _ in range(MSG_SIZE)]
 
-    keys = GEN(s_list, rounds=16, block_size=MSG_SIZE)
+    # Rounds reduzidas para 4 para maior rapidez
+    keys = GEN(s_list, rounds=4, block_size=MSG_SIZE)
 
     C = ENC(keys, M)
     M_dec = DEC(keys, C)
@@ -189,4 +190,4 @@ if __name__ == "__main__":
     print("Cifrado:", C)
     print("Decifrado:", M_dec)
 
-    run_tests(s_list, M)
+    run_tests(s_list, M, rounds=4)

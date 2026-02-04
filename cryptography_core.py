@@ -56,7 +56,7 @@ def apply_inv_sbox(bits):
 
 # ********************************************** Geração da SEED **********************************************
 
-def exotic_entropy_fast():
+def seed():
     # MAC address
     mac = uuid.getnode()
 
@@ -193,12 +193,12 @@ if __name__ == "__main__":
     N = 1000
     start = time.perf_counter()
     for _ in range(N):
-        exotic_entropy_fast()
+        seed()
     end = time.perf_counter()
 
     print("Average entropy time:", (end - start) / N)
 
-    seed = exotic_entropy_fast() & 0xFFFFFFFF
+    seed = seed() & 0xFFFFFFFF
     SEED_BITS = 32
     MSG_SIZE = 4 * SEED_BITS  # 128 bits
 

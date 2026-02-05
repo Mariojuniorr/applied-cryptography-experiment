@@ -20,6 +20,10 @@ SBOX = {
 
 INV_SBOX = {v: k for k, v in SBOX.items()}
 
+P_INDICES = [(i * 37) % 128 for i in range(128)]
+INV_P_INDICES = [0] * 128
+for i, p in enumerate(P_INDICES):
+    INV_P_INDICES[p] = i
 
 def permute(bits):
     n = len(bits)
@@ -36,20 +40,55 @@ def inv_permute(bits):
     return inv
 
 
-def apply_sbox_int(x):
-    out = 0
-    for i in range(0, 128, 4):
-        nibble = (x >> (124 - i)) & 0xF
-        out = (out << 4) | SBOX[nibble]
-    return out
+def apply_sbox_int(state_int):
+    """
+    Aplica a S-Box padrão processando o estado como um único INTEIRO.
+    """
+    output = 0
+    for i in range(32):
+        shift = i * 4
+        nibble = (state_int >> shift) & 0xF
+        subbed = SBOX[nibble]      
+        output |= (subbed << shift)
+    return output
 
+def linear_layer_int(state_int):
+    """
+    Permutação padrão (Difusão).
+    Converte para bits, permuta e volta para int (Híbrido seguro).
+    """
+    bits = [(state_int >> (127 - i)) & 1 for i in range(128)]
+    
+    permuted_bits = [bits[i] for i in P_INDICES]
+    
+    return bits_to_int(permuted_bits)
 
-def apply_inv_sbox_int(x):
-    out = 0
-    for i in range(0, 128, 4):
-        nibble = (x >> (124 - i)) & 0xF
-        out = (out << 4) | INV_SBOX[nibble]
-    return out
+def apply_inv_sbox_int(state_int):
+    """
+    Aplica a S-Box inversa processando o estado como um único INTEIRO.
+    Retorna: INTEIRO.
+    """
+    output = 0
+    # Processa 32 nibbles (4 bits) para completar 128 bits
+    for i in range(32):
+        shift = i * 4
+        # Extrai o nibble atual (4 bits)
+        nibble = (state_int >> shift) & 0xF
+        # Substitui pela S-Box Inversa
+        subbed = INV_SBOX[nibble]
+        # Coloca o resultado na posição correta
+        output |= (subbed << shift)
+    return output
+
+def inv_linear_layer_int(state_int):
+    """
+    Permutação inversa usando índices pré-calculados.
+    Recebe INTEIRO, retorna INTEIRO.
+    """
+    bits = [(state_int >> (127 - i)) & 1 for i in range(128)]
+    permuted_bits = [bits[i] for i in INV_P_INDICES] # Usa sua tabela INV_P_INDICES global
+    
+    return bits_to_int(permuted_bits)
 
 def bits_to_int(bits: List[int]) -> int:
     x = 0
@@ -59,16 +98,8 @@ def bits_to_int(bits: List[int]) -> int:
     
 def int_to_bits(x: int, size: int) -> List[int]:
     return [(x >> i) & 1 for i in reversed(range(size))]
-    
 
-def linear_layer_int(x, n=128):
-    x ^= ((x << 3) | (x >> (n - 3))) & ((1 << n) - 1)
-    x ^= ((x << 11) | (x >> (n - 11))) & ((1 << n) - 1)
-    x ^= ((x << 17) | (x >> (n - 17))) & ((1 << n) - 1)
-    return x
 
-def inv_linear_layer_int(x, n=128):
-    return linear_layer_int(x, n)
 
 
 # ********************************************** Geração da SEED **********************************************
@@ -124,10 +155,9 @@ def ENC(keys, M_bits):
     for i, Ki_bits in enumerate(keys):
         Ki = bits_to_int(Ki_bits)
 
-        # AddRoundKey
+   
         state ^= Ki
 
-        # Substituição
         state = apply_sbox_int(state)
 
         # Difusão (exceto última rodada)
@@ -141,19 +171,20 @@ def ENC(keys, M_bits):
 def DEC(keys, C_bits):
     state = bits_to_int(C_bits) 
 
+    if not isinstance(state, int):
+        raise TypeError(f"Erro: bits_to_int falhou. state é {type(state)}")
     for i, Ki_bits in enumerate(reversed(keys)):
-
+        
         if i != 0:
             state = inv_linear_layer_int(state)
 
-        # Inverte S-box
         state = apply_inv_sbox_int(state)
 
-        # AddRoundKey
         Ki = bits_to_int(Ki_bits)
         state ^= Ki
 
-    return int_to_bits(state, len(C_bits)) 
+    return int_to_bits(state, len(C_bits))
+
 
 
 

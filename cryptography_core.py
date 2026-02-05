@@ -7,7 +7,7 @@ import platform
 import ctypes
 import ctypes.wintypes
 import random
-
+from typing import List
 
 # ******************************************** Estrutura SPN **********************************************
 
@@ -23,7 +23,7 @@ INV_SBOX = {v: k for k, v in SBOX.items()}
 
 def permute(bits):
     n = len(bits)
-    P = [(i * 5) % n for i in range(n)]
+    P = [(i * 37) % n for i in range(n)]
     return [bits[P[i]] for i in range(n)]
 
 
@@ -36,24 +36,39 @@ def inv_permute(bits):
     return inv
 
 
-def apply_sbox(bits):
-    out = []
-    for i in range(0, len(bits), 4):
-        block = bits[i:i+4]
-        v = int("".join(map(str, block)), 2)
-        s = SBOX[v]
-        out.extend([(s >> j) & 1 for j in reversed(range(4))])
+def apply_sbox_int(x):
+    out = 0
+    for i in range(0, 128, 4):
+        nibble = (x >> (124 - i)) & 0xF
+        out = (out << 4) | SBOX[nibble]
     return out
 
 
-def apply_inv_sbox(bits):
-    out = []
-    for i in range(0, len(bits), 4):
-        block = bits[i:i+4]
-        v = int("".join(map(str, block)), 2)
-        s = INV_SBOX[v]
-        out.extend([(s >> j) & 1 for j in reversed(range(4))])
+def apply_inv_sbox_int(x):
+    out = 0
+    for i in range(0, 128, 4):
+        nibble = (x >> (124 - i)) & 0xF
+        out = (out << 4) | INV_SBOX[nibble]
     return out
+
+def bits_to_int(bits: List[int]) -> int:
+    x = 0
+    for b in bits:
+        x = (x << 1) | b
+    return x
+    
+def int_to_bits(x: int, size: int) -> List[int]:
+    return [(x >> i) & 1 for i in reversed(range(size))]
+    
+
+def linear_layer_int(x, n=128):
+    x ^= ((x << 3) | (x >> (n - 3))) & ((1 << n) - 1)
+    x ^= ((x << 11) | (x >> (n - 11))) & ((1 << n) - 1)
+    x ^= ((x << 17) | (x >> (n - 17))) & ((1 << n) - 1)
+    return x
+
+def inv_linear_layer_int(x, n=128):
+    return linear_layer_int(x, n)
 
 
 # ********************************************** Geração da SEED **********************************************
@@ -70,14 +85,19 @@ def seed():
         except:
             pass
 
-    combined_int = (mac ^ cursor_entropy ^ os.getpid()) & 0xFFFFFFFF
+    x = ((time.time_ns() ^ mac) & 0xFFFFFFFF) / (1 << 32)
+    for _ in range(8):
+        x = 3.99 * x * (1 - x)
+    chaos_entropy = int(x * (1 << 32))
+    
+    combined_int = (mac ^ cursor_entropy ^ os.getpid() ^ chaos_entropy) & 0xFFFFFFFF
 
     return [(combined_int >> i) & 1 for i in reversed(range(32))]
 
 
 # ********************************************** Funções principais **********************************************
-def GEN(seed_bits, rounds=4, block_size=128):
-    x = seed_bits[:]  # copia
+def GEN(seed_bits: List[int], rounds=16, block_size=128):
+    x = bits_to_int(seed_bits[:32]) & 0xFFFFFFFF
 
     keys = []
 
@@ -85,36 +105,56 @@ def GEN(seed_bits, rounds=4, block_size=128):
         sub = []
 
         for _ in range(block_size):
-            # LFSR simples
-            new_bit = x[0] ^ x[2] ^ x[5] ^ x[-1]
+            # Xorshift 32
+            x ^= (x << 13) & 0xFFFFFFFF
+            x ^= (x >> 17)
+            x ^= (x << 5) & 0xFFFFFFFF
 
-            sub.append(new_bit)
-
-            x = x[1:] + [new_bit]
+            sub.append(x & 1)
 
         keys.append(sub)
-
+    
     return keys
 
 
-def ENC(keys, M):
-    state = M[:]
-    for i, Ki in enumerate(keys):
-        state = [b ^ k for b, k in zip(state, Ki)]
-        state = apply_sbox(state)
+
+def ENC(keys, M_bits):
+    state = bits_to_int(M_bits)
+
+    for i, Ki_bits in enumerate(keys):
+        Ki = bits_to_int(Ki_bits)
+
+        # AddRoundKey
+        state ^= Ki
+
+        # Substituição
+        state = apply_sbox_int(state)
+
+        # Difusão (exceto última rodada)
         if i != len(keys) - 1:
-            state = permute(state)
-    return state
+            state = linear_layer_int(state)
+
+    return int_to_bits(state, len(M_bits))
 
 
-def DEC(keys, C):
-    state = C[:]
-    for i, Ki in enumerate(reversed(keys)):
+
+def DEC(keys, C_bits):
+    state = bits_to_int(C_bits) 
+
+    for i, Ki_bits in enumerate(reversed(keys)):
+
         if i != 0:
-            state = inv_permute(state)
-        state = apply_inv_sbox(state)
-        state = [b ^ k for b, k in zip(state, Ki)]
-    return state
+            state = inv_linear_layer_int(state)
+
+        # Inverte S-box
+        state = apply_inv_sbox_int(state)
+
+        # AddRoundKey
+        Ki = bits_to_int(Ki_bits)
+        state ^= Ki
+
+    return int_to_bits(state, len(C_bits)) 
+
 
 
 # ********************************************** TESTES **********************************************
@@ -152,6 +192,25 @@ def test_balance(C):
     zeros = len(C) - ones
     return ones / len(C), zeros / len(C)
 
+def test_collisions(seed_bits, rounds=4, block_size=128, n_tests=10000):
+    keys = GEN(seed_bits, rounds, block_size)
+
+    seen = {}
+    collisions = 0
+
+    for i in range(n_tests):
+        M = [random.randint(0, 1) for _ in range(block_size)]
+        C = tuple(ENC(keys, M)) 
+
+        if C in seen:
+            if seen[C] != M:
+                collisions += 1
+        else:
+            seen[C] = M
+
+    return collisions
+
+
 
 def run_tests(seed_bits, M, rounds=4):
     print("\n********TESTES*********")
@@ -168,6 +227,10 @@ def run_tests(seed_bits, M, rounds=4):
     print("Difusão (Avalanche M):", test_avalanche_message(seed_bits, M, rounds))
     print("Confusão (Avalanche K):", test_avalanche_key(seed_bits, M, rounds))
     print("Balanceamento bits:", test_balance(C))
+
+    col = test_collisions(seed_bits, rounds, len(M), n_tests=1000)
+    print("Colisões encontradas:", col)
+
 
 
 # ********************************************** MAIN **********************************************
@@ -190,4 +253,4 @@ if __name__ == "__main__":
     print("Cifrado:", C)
     print("Decifrado:", M_dec)
 
-    run_tests(s_list, M, rounds=4)
+    run_tests(s_list, M)
